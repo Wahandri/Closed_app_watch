@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Escoba "limpia apps" sobre fondo oscuro, dentro de la zona segura del icono adaptativo -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:rotation="-18">
+
+        <!-- Mango -->
+        <path
+            android:fillColor="#ECEFF1"
+            android:pathData="M50,28 L58,28 L58,58 L50,58 Z" />
+
+        <!-- Cepillo / base -->
+        <path
+            android:fillColor="#00E5FF"
+            android:pathData="M38,58 L70,58 A4,4 0 0 1 74,62 L74,66 A4,4 0 0 1 70,70 L38,70 A4,4 0 0 1 34,66 L34,62 A4,4 0 0 1 38,58 Z" />
+
+        <!-- Cerdas -->
+        <path
+            android:fillColor="#80DEEA"
+            android:pathData="M37,72 L42,72 L40,84 L35,84 Z" />
+        <path
+            android:fillColor="#80DEEA"
+            android:pathData="M45,72 L50,72 L49,84 L44,84 Z" />
+        <path
+            android:fillColor="#80DEEA"
+            android:pathData="M58,72 L63,72 L63,84 L58,84 Z" />
+        <path
+            android:fillColor="#80DEEA"
+            android:pathData="M66,72 L71,72 L73,84 L68,84 Z" />
+
+        <!-- Brillo / chispa de "limpio" -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M68,32 L70,38 L76,40 L70,42 L68,48 L66,42 L60,40 L66,38 Z" />
+    </group>
+</vector>

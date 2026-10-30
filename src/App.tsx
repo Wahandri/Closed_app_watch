@@ -32,7 +32,7 @@ git commit -m "feat: Xiaomi Watch 2 Recent Apps Manager with Large Fonts"
 
 # 3. Vincular con tu repositorio en GitHub y subir
 git branch -M main
-git remote add origin https://github.com/TU_USUARIO/wear-recent-apps.git
+git remote add origin https://github.com/Wahandri/Closed_app_watch.git
 git push -u origin main`;
 
   const handleCopyCommands = async () => {
@@ -180,14 +180,23 @@ git push -u origin main`;
                   </p>
                 </div>
 
-                <button
-                  onClick={handleDownloadZip}
-                  disabled={isZipping}
-                  className="px-5 py-3 rounded-2xl bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold text-sm flex items-center justify-center gap-2 shadow-xl shadow-cyan-500/25 active:scale-95 transition-all shrink-0"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>{isZipping ? 'Preparando ZIP...' : 'Descargar Proyecto ZIP'}</span>
-                </button>
+                <div className="flex flex-col gap-2 shrink-0">
+                  <a
+                    href="https://github.com/Wahandri/Closed_app_watch/releases/latest/download/apps-recientes-watch.apk"
+                    className="px-5 py-3 rounded-2xl bg-emerald-400 hover:bg-emerald-300 text-black font-extrabold text-sm flex items-center justify-center gap-2 shadow-xl shadow-emerald-500/25 active:scale-95 transition-all"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Descargar APK</span>
+                  </a>
+                  <button
+                    onClick={handleDownloadZip}
+                    disabled={isZipping}
+                    className="px-5 py-3 rounded-2xl bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold text-sm flex items-center justify-center gap-2 shadow-xl shadow-cyan-500/25 active:scale-95 transition-all"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>{isZipping ? 'Preparando ZIP...' : 'Descargar Proyecto ZIP'}</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -198,7 +207,7 @@ git push -u origin main`;
                 <span>Comandos para subir a tu GitHub</span>
               </h3>
               <p className="text-xs text-neutral-400">
-                Crea un repositorio vacío en tu cuenta de GitHub (ej: <code className="text-cyan-300 font-mono">wear-recent-apps</code>), descomprime el ZIP descargado en tu ordenador, abre la terminal en esa carpeta y pega:
+                El repositorio ya existe en <code className="text-cyan-300 font-mono">github.com/Wahandri/Closed_app_watch</code>. Descomprime el ZIP, abre la terminal en esa carpeta y pega:
               </p>
 
               <div className="relative group">

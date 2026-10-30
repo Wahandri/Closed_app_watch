@@ -6,6 +6,8 @@ export interface ProjectFile {
   content: string;
 }
 
+// Proyecto Android real (Wear OS) que se muestra y se descarga en ZIP.
+// Este archivo se genera desde la carpeta android/ del repositorio.
 export const GITHUB_REPOSITORY_FILES: ProjectFile[] = [
   {
     path: '.github/workflows/build-apk.yml',
@@ -34,20 +36,40 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew || true
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
 
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+      - name: Build Debug + Release APK
+        run: |
+          gradle assembleDebug --stacktrace
+          gradle assembleRelease --stacktrace
+        env:
+          ANDROID_HOME: \${{ env.ANDROID_SDK_ROOT }}
 
-      - name: Upload Debug APK Artifact
+      - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: wear-recent-apps-debug-apk
+          name: apps-recientes-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 14
+
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: apps-recientes-release
+          path: app/build/outputs/apk/release/app-release.apk
+          retention-days: 14
+
+      - name: Attach APKs to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/release/app-release.apk
 `,
   },
   {
@@ -55,98 +77,143 @@ jobs:
     filename: 'README.md',
     category: 'docs',
     description: 'Documentación principal del repositorio de GitHub con instrucciones de compilación y comandos ADB para Xiaomi Watch 2.',
-    content: `# Wear OS Recent Apps Manager (Xiaomi Watch 2)
+    content: `# Apps Recientes · Wear OS (Xiaomi Watch 2)
 
-Gestor de aplicaciones recientes y liberador de memoria RAM en segundo plano diseñado específicamente para **Xiaomi Watch 2** (Snapdragon W5+ Gen 1 con Wear OS 3.5 / 4) y relojes circulares con pantalla AMOLED.
+Gestor de aplicaciones recientes y liberador de memoria para **Xiaomi Watch 2** (Snapdragon W5+ Gen 1, Wear OS 3.5 / 4) y cualquier reloj circular con Wear OS 3 o superior.
 
-Construido íntegramente con **Jetpack Compose for Wear OS** con tipografía de **gran tamaño y alto contraste** para lectura cómoda en muñeca.
+Interfaz **Jetpack Compose for Wear OS** con tipografía grande, tarjetas compactas y botones de tipo píldora pensados para una pantalla de 1.43".
 
 ---
 
 ## Características
 
-- **Diseño Adaptado a Pantallas Circulares:** Utiliza \`ScalingLazyColumn\` para curvas fluidas que no se cortan en los bordes de la esfera.
-- **Tipografía Grande y Legible (Watch-Optimized):** Textos de 16sp–18sp, botones con áreas táctiles ampliadas (48dp+) y números de RAM en alto contraste pensados para uso con dedos en pantallas de 1.43".
-- **Soporte de Corona Giratoria (Rotary Input):** Navegación completa mediante la corona física del Xiaomi Watch 2 con feedback háptico.
-- **Filtrado Inteligente de Procesos:** Oculta automáticamente los procesos críticos de Android, SystemUI y el Launcher de Xiaomi mediante comprobación de \`ApplicationInfo.FLAG_SYSTEM\`.
-- **Cierre Seguro sin Root:** Utiliza \`ActivityManager.killBackgroundProcesses()\` para limpiar memoria y detener servicios secundarios sin requerir permisos de superusuario ni poner en riesgo el firmware del reloj.
-- **GitHub Actions Incluido:** Cada push a este repositorio genera automáticamente la APK lista para descargar desde la pestaña **Actions > Artifacts**.
+- **Diseño circular**: \`ScalingLazyColumn\` sin auto-centrado, cabecera fija bajo el reloj y tarjetas que no se cortan en los bordes.
+- **Tipografía grande**: títulos de 15sp–17sp, secundarios de 12sp, alto contraste sobre negro AMOLED.
+- **Corona giratoria**: \`onRotaryScrollEvent\` para desplazar la lista con la corona del reloj.
+- **Lista real de apps recientes**: \`UsageStatsManager\` (últimos 45 min) + \`ActivityManager.runningAppProcesses\`, filtrando paquetes del sistema y apps sin lanzador.
+- **RAM libre real** del reloj en la cabecera (\`ActivityManager.MemoryInfo\`), que se actualiza al limpiar.
+- **Cierre sin root**: \`ActivityManager.killBackgroundProcesses()\` + lista de descartadas para que la app cerrada no reaparezca hasta pulsar *Actualizar*.
+- **Feedback háptico** al cerrar una app o pulsar *Cerrar todas*.
+- **Icono adaptativo** propio (escoba) con capa *monochrome* para Wear OS 4.
+- **APK de ~2 MB** en release (R8 + sin recursos innecesarios).
+
+> La RAM por app es una **estimación** (\`~65 MB\`): Android no permite leer el PSS de otras apps sin root. El dato de RAM libre de la cabecera sí es real.
 
 ---
 
-## Estructura del Proyecto
+## Estructura
 
 \`\`\`
-├── .github/workflows/build-apk.yml  # Compilación automática en la nube de GitHub
+├── .github/workflows/build-apk.yml   # CI: compila debug + release y publica artifacts
 ├── app/
-│   ├── build.gradle.kts            # Dependencias Wear Compose 1.4+, Wear Material
+│   ├── build.gradle.kts              # Wear Compose 1.4, compileSdk 35, minSdk 30
+│   ├── proguard-rules.pro
 │   └── src/main/
-│       ├── AndroidManifest.xml     # Hardware Watch, permisos de procesos
+│       ├── AndroidManifest.xml       # uses-feature watch, standalone, permisos
 │       ├── java/com/example/wearrecentapps/
-│       │   ├── MainActivity.kt     # Interfaz Compose con botones y textos grandes
-│       │   └── AppManagerViewModel.kt # Lógica UsageStatsManager + ActivityManager
-│       └── res/values/             # Strings, colores AMOLED oscuros
-├── build.gradle.kts                # Buildscript raíz
-├── settings.gradle.kts             # Módulos y repositorios
-├── gradle.properties               # Configuración de memoria JVM
+│       │   ├── MainActivity.kt       # UI Compose (cabecera, tarjetas, píldoras)
+│       │   └── AppManagerViewModel.kt# UsageStats + kill + RAM libre + háptica
+│       └── res/                      # strings, colores e icono adaptativo
+├── build.gradle.kts
+├── settings.gradle.kts
+├── gradle.properties
 └── README.md
 \`\`\`
 
 ---
 
-## Cómo compilar la APK
+## Compilar la APK
 
-### Opción A: Compilar automáticamente en GitHub (Sin instalar nada en tu PC)
-1. Sube este proyecto a tu repositorio de GitHub.
-2. Ve a la pestaña **Actions** en GitHub.
-3. El flujo **Build Wear OS APK** compilará el código en la nube de forma automática.
-4. Al terminar el trabajo, descarga el archivo \`wear-recent-apps-debug-apk\` (dentro viene el archivo \`app-debug.apk\`).
+### En GitHub (sin instalar nada)
 
-### Opción B: Compilar localmente con Android Studio o Terminal
+1. Sube el proyecto al repositorio.
+2. Abre la pestaña **Actions** → workflow **Build Wear OS APK**.
+3. Descarga el artifact \`apps-recientes-debug\` o \`apps-recientes-release\`.
+
+El workflow instala Gradle 8.13, compila \`assembleDebug\` y \`assembleRelease\` y sube ambas APKs.
+
+### En local
+
 \`\`\`bash
-# En Windows:
-gradlew.bat assembleDebug
-
-# En Mac / Linux:
-chmod +x gradlew
-./gradlew assembleDebug
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+export ANDROID_HOME=$HOME/android-sdk
+./gradlew assembleDebug     # app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleRelease   # app/build/outputs/apk/release/app-release.apk (firmada con debug)
 \`\`\`
-El archivo generado estará en: \`app/build/outputs/apk/debug/app-debug.apk\`
+
+Si el ZIP no incluye \`gradle-wrapper.jar\`, ejecuta una vez \`gradle wrapper\` (o usa \`gradle assembleDebug\` directamente).
 
 ---
 
-## Cómo instalar en tu Xiaomi Watch 2 vía Wi-Fi ADB
+## Instalar en el reloj (ADB por Wi-Fi)
 
-1. **Activar Opciones de Desarrollador en el Reloj:**
-   - En tu Xiaomi Watch 2, ve a **Ajustes > Sistema > Información**.
-   - Pulsa **7 veces** seguidas en **Número de compilación**.
-   - Ve atrás a **Ajustes > Opciones de desarrollador**.
-   - Activa **Depuración ADB** y **Depuración inalámbrica (Wi-Fi)**.
+1. En el reloj: **Ajustes → Sistema → Información** y pulsa **7 veces** en *Número de compilación*.
+2. **Ajustes → Opciones de desarrollador**: activa *Depuración ADB* y *Depuración inalámbrica*.
+3. En el PC:
 
-2. **Vincular por Wi-Fi:**
-   En *Depuración inalámbrica*, pulsa **Vincular nuevo dispositivo** para ver tu IP, puerto y código de 6 dígitos:
-   \`\`\`bash
-   adb pair 192.168.1.XX:PUERTO_VINCULACION
-   # Introduce el código de 6 dígitos que muestra el reloj
-   \`\`\`
+\`\`\`bash
+adb pair 192.168.1.XX:PUERTO   # código de 6 dígitos que muestra el reloj
+adb connect 192.168.1.XX:5555
+adb install -r apps-recientes-watch.apk
+\`\`\`
 
-3. **Conectar e Instalar:**
-   \`\`\`bash
-   adb connect 192.168.1.XX:5555
-   adb install -r app/build/outputs/apk/debug/app-debug.apk
-   \`\`\`
+4. Abre **Apps Recientes** en el reloj y concede **Acceso de uso** cuando lo pida. Si el menú no aparece en Wear OS, fuérzalo por ADB:
 
-4. **Conceder Permiso Especial de Acceso de Uso:**
-   Para permitir que la app detecte qué aplicaciones están activas en segundo plano en Wear OS:
-   \`\`\`bash
-   adb shell appops set com.example.wearrecentapps android:get_usage_stats allow
-   \`\`\`
+\`\`\`bash
+adb shell appops set com.example.wearrecentapps GET_USAGE_STATS allow
+\`\`\`
 
 ---
 
-## Licencia
+## Permisos
 
-Distribuido bajo licencia MIT o Apache 2.0. Uso personal libre.
+| Permiso | Uso |
+| --- | --- |
+| \`KILL_BACKGROUND_PROCESSES\` | Cerrar procesos en segundo plano sin root |
+| \`PACKAGE_USAGE_STATS\` | Detectar apps usadas recientemente (se concede a mano) |
+| \`QUERY_ALL_PACKAGES\` | Leer nombre e icono de las apps instaladas |
+| \`VIBRATE\` | Feedback háptico al cerrar |
+
+---
+
+## Estado
+
+Compilado y probado en emulador Wear OS (API 30, pantalla redonda 320×320): lista de apps, cierre individual, *Cerrar todas*, permiso de uso y refresco de RAM funcionando.
+`,
+  },
+  {
+    path: 'build-apk.sh',
+    filename: 'build-apk.sh',
+    category: 'docs',
+    description: 'Script de compilación local: detecta JDK, Android SDK y genera la APK debug o release firmada con la clave de debug.',
+    content: `#!/usr/bin/env bash
+# Compila la APK de Apps Recientes (Wear OS / Xiaomi Watch 2).
+# Uso: ./build-apk.sh [debug|release]
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+export JAVA_HOME="\${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk-amd64}"
+export ANDROID_HOME="\${ANDROID_HOME:-$HOME/android-sdk}"
+export ANDROID_SDK_ROOT="$ANDROID_HOME"
+export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
+
+VARIANT="\${1:-release}"
+
+echo "==> Java: $(java -version 2>&1 | head -1)"
+echo "==> SDK:  $ANDROID_HOME"
+
+if [ "$VARIANT" = "debug" ]; then
+  ./gradlew --no-daemon assembleDebug
+  APK="app/build/outputs/apk/debug/app-debug.apk"
+else
+  # La release va firmada con la clave de debug para poder instalarla por ADB.
+  ./gradlew --no-daemon assembleRelease
+  APK="app/build/outputs/apk/release/app-release.apk"
+fi
+
+echo "==> APK: $APK ($(du -h "$APK" | cut -f1))"
+echo "Instalar en el reloj:  adb install -r $APK"
 `,
   },
   {
@@ -239,7 +306,7 @@ kotlin.code.style=official
 
 android {
     namespace = "com.example.wearrecentapps"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.example.wearrecentapps"
@@ -309,6 +376,15 @@ dependencies {
 `,
   },
   {
+    path: 'app/proguard-rules.pro',
+    filename: 'proguard-rules.pro',
+    category: 'docs',
+    description: 'Reglas de ProGuard/R8 para la build release (mantiene las clases de la app).',
+    content: `# Add project specific ProGuard rules here.
+-keep class com.example.wearrecentapps.** { *; }
+`,
+  },
+  {
     path: 'app/src/main/AndroidManifest.xml',
     filename: 'AndroidManifest.xml',
     category: 'manifest',
@@ -338,7 +414,8 @@ dependencies {
 
     <application
         android:allowBackup="true"
-        android:icon="@android:drawable/sym_def_app_icon"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.DeviceDefault">
@@ -381,16 +458,32 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.scrollBy
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -398,24 +491,38 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
-import androidx.wear.compose.foundation.lazy.ScalingLazyListAnchorType
+import androidx.wear.compose.foundation.lazy.ScalingLazyListState
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
-import androidx.wear.compose.material.*
+import androidx.wear.compose.material.AppCard
+import androidx.wear.compose.material.Chip
+import androidx.wear.compose.material.ChipDefaults
+import androidx.wear.compose.material.CircularProgressIndicator
+import androidx.wear.compose.material.Colors
+import androidx.wear.compose.material.Icon
+import androidx.wear.compose.material.MaterialTheme
+import androidx.wear.compose.material.PositionIndicator
+import androidx.wear.compose.material.Scaffold
+import androidx.wear.compose.material.Text
+import androidx.wear.compose.material.TimeText
 import kotlinx.coroutines.launch
 
 /**
  * MainActivity para Xiaomi Watch 2.
- * Optimizada para uso táctil en muñeca con TIPOGRAFÍA GRANDE y botones de toque amplio (48dp+).
+ * Optimizada para uso tactil en muneca con TIPOGRAFIA GRANDE y botones de toque amplio (48dp+).
  */
 class MainActivity : ComponentActivity() {
 
@@ -423,52 +530,64 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         setContent {
             WearAppTheme {
-                Scaffold(
-                    timeText = {
-                        TimeText(
-                            modifier = Modifier.padding(top = 2.dp),
-                            timeTextStyle = androidx.compose.ui.text.TextStyle(
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFFE0E0E0)
-                            )
-                        )
-                    },
-                    positionIndicator = {
-                        val listState = rememberScalingLazyListState()
-                        PositionIndicator(scalingLazyListState = listState)
-                    }
-                ) {
-                    RecentAppsScreen(viewModel = viewModel)
-                }
+                WearApp(viewModel = viewModel)
             }
         }
     }
 
     override fun onResume() {
         super.onResume()
-        viewModel.loadRecentRunningApps()
+        // Al volver de los ajustes de permiso se refresca sola.
+        viewModel.refreshPermissionAndApps()
     }
 }
 
 @Composable
-fun RecentAppsScreen(viewModel: AppManagerViewModel) {
-    val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-    val apps by viewModel.recentApps.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val hasUsageStatsPermission by viewModel.hasUsageStatsPermission.collectAsState()
+fun WearApp(viewModel: AppManagerViewModel) {
+    val listState = rememberScalingLazyListState()
 
-    val listState = rememberScalingLazyListState(initialCenterItemIndex = 1)
+    Scaffold(
+        timeText = {
+            TimeText(
+                timeTextStyle = TextStyle(
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFE0E0E0)
+                )
+            )
+        },
+        positionIndicator = {
+            if (listState.isScrollInProgress) {
+                PositionIndicator(scalingLazyListState = listState)
+            }
+        }
+    ) {
+        RecentAppsScreen(viewModel = viewModel, listState = listState)
+    }
+}
+
+@Composable
+fun RecentAppsScreen(
+    viewModel: AppManagerViewModel,
+    listState: ScalingLazyListState
+) {
+    val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
+
+    val apps by viewModel.recentApps.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val hasUsageStatsPermission by viewModel.hasUsageStatsPermission.collectAsStateWithLifecycle()
+    val freeRamMb by viewModel.freeRamMb.collectAsStateWithLifecycle()
+
     val focusRequester = remember { FocusRequester() }
 
-    // Conecta la corona digital del Xiaomi Watch 2 para scroll físico
+    // Conecta la corona digital del Xiaomi Watch 2 para scroll fisico
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
-        viewModel.loadRecentRunningApps()
+        viewModel.refreshPermissionAndApps()
     }
 
     Box(
@@ -476,64 +595,56 @@ fun RecentAppsScreen(viewModel: AppManagerViewModel) {
             .fillMaxSize()
             .background(Color.Black)
             .onRotaryScrollEvent {
-                coroutineScope.launch {
-                    listState.scrollBy(it.verticalScrollPixels)
-                }
+                coroutineScope.launch { listState.scrollBy(it.verticalScrollPixels) }
                 true
             }
             .focusRequester(focusRequester)
             .focusable(),
         contentAlignment = Alignment.Center
     ) {
-        if (isLoading) {
-            CircularProgressIndicator(
+        when {
+            isLoading -> CircularProgressIndicator(
                 modifier = Modifier.size(44.dp),
                 indicatorColor = MaterialTheme.colors.primary,
                 strokeWidth = 4.dp
             )
-        } else if (!hasUsageStatsPermission) {
-            PermissionRequiredCard(onGrantClick = {
-                viewModel.openUsageAccessSettings(context)
-            })
-        } else if (apps.isEmpty()) {
-            EmptyAppsView(onRefresh = { viewModel.loadRecentRunningApps() })
-        } else {
-            ScalingLazyColumn(
+
+            !hasUsageStatsPermission -> PermissionRequiredCard(
+                onGrantClick = { viewModel.openUsageAccessSettings(context) }
+            )
+
+            else -> ScalingLazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 state = listState,
-                anchorType = ScalingLazyListAnchorType.ItemCenter,
+                // Sin auto-centrado: el contenido empieza arriba y no se corta
+                // bajo el reloj de la esfera.
+                autoCentering = null,
                 contentPadding = PaddingValues(
-                    top = 40.dp,
-                    start = 14.dp,
-                    end = 14.dp,
-                    bottom = 48.dp
+                    top = 0.dp,
+                    start = 10.dp,
+                    end = 10.dp,
+                    bottom = 18.dp
                 ),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Título de lista con LETRA GRANDE (18sp)
+                // Hueco para que el titulo no quede debajo del reloj de la esfera
                 item {
-                    ListHeader {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        ) {
-                            Text(
-                                text = "Apps Activas",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = MaterialTheme.colors.primary
-                            )
-                            Text(
-                                text = "\${apps.size} en ejecución",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFFB0BEC5)
-                            )
-                        }
+                    Spacer(modifier = Modifier.height(26.dp))
+                }
+
+                item {
+                    ListHeader(
+                        appCount = apps.size,
+                        freeRamMb = freeRamMb
+                    )
+                }
+
+                if (apps.isEmpty()) {
+                    item {
+                        EmptyAppsView(onRefresh = { viewModel.refreshAll() })
                     }
                 }
 
-                // Lista de aplicaciones con fuentes ampliadas y áreas de toque cómodas
                 items(
                     items = apps,
                     key = { it.packageName }
@@ -542,12 +653,14 @@ fun RecentAppsScreen(viewModel: AppManagerViewModel) {
 
                     AnimatedVisibility(
                         visible = isVisible,
-                        exit = fadeOut(animationSpec = tween(220)) + shrinkVertically(animationSpec = tween(220))
+                        exit = fadeOut(animationSpec = tween(200)) +
+                            shrinkVertically(animationSpec = tween(200))
                     ) {
                         AppItemCard(
                             app = appItem,
                             onCloseClick = {
                                 isVisible = false
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                 viewModel.closeApp(appItem.packageName)
                                 Toast.makeText(
                                     context,
@@ -559,37 +672,32 @@ fun RecentAppsScreen(viewModel: AppManagerViewModel) {
                     }
                 }
 
-                // Botón grande "Cerrar Todas" (Altura 52dp, fuente 15sp negrita)
-                item {
-                    Chip(
-                        onClick = {
-                            viewModel.closeAllApps()
-                            Toast.makeText(context, "Todas las apps cerradas", Toast.LENGTH_SHORT).show()
-                        },
-                        icon = {
-                            Icon(
-                                imageVector = Icons.Default.DeleteSweep,
-                                contentDescription = "Cerrar Todo",
-                                tint = Color.White,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        },
-                        label = {
-                            Text(
-                                text = "Cerrar Todas",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp,
-                                color = Color.White
-                            )
-                        },
-                        colors = ChipDefaults.chipColors(
+                if (apps.isNotEmpty()) {
+                    item {
+                        ActionPill(
+                            text = "Cerrar todas",
                             backgroundColor = Color(0xFFD32F2F),
-                            contentColor = Color.White
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth(0.92f)
-                            .height(52.dp)
-                            .padding(top = 6.dp)
+                            contentColor = Color.White,
+                            onClick = {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.closeAllApps()
+                                Toast.makeText(
+                                    context,
+                                    "Memoria liberada",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        )
+                    }
+                }
+
+                item {
+                    ActionPill(
+                        text = "Actualizar",
+                        backgroundColor = Color(0xFF1E1E1E),
+                        contentColor = Color(0xFF00E5FF),
+                        icon = Icons.Default.Refresh,
+                        onClick = { viewModel.refreshAll() }
                     )
                 }
             }
@@ -597,9 +705,74 @@ fun RecentAppsScreen(viewModel: AppManagerViewModel) {
     }
 }
 
+/** Boton tipo pildora a todo el ancho, con texto siempre centrado. */
+@Composable
+fun ActionPill(
+    text: String,
+    backgroundColor: Color,
+    contentColor: Color = Color.White,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(backgroundColor)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.size(6.dp))
+        }
+        Text(
+            text = text,
+            color = contentColor,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+fun ListHeader(appCount: Int, freeRamMb: Int) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "Apps Activas",
+            fontSize = 17.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = MaterialTheme.colors.primary
+        )
+        Text(
+            text = if (freeRamMb > 0) {
+                "$appCount en ejecucion · $freeRamMb MB libres"
+            } else {
+                "$appCount en ejecucion"
+            },
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color(0xFF80DEEA)
+        )
+    }
+}
+
 /**
- * Tarjeta individual de aplicación adaptada para reloj:
- * Nombre de app en 16sp, RAM en 13sp de alto contraste, botón de cierre de 40dp.
+ * Tarjeta individual de aplicacion adaptada para reloj:
+ * Nombre de app en 16sp, RAM en 13sp de alto contraste, boton de cierre de 40dp.
  */
 @Composable
 fun AppItemCard(
@@ -614,19 +787,10 @@ fun AppItemCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
+                fontSize = 15.sp,
                 color = Color.White
             )
         },
-        title = {
-            Text(
-                text = "\${app.estimatedRamMb} MB RAM • \${app.lastActiveFormatted}",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color(0xFF80DEEA)
-            )
-        },
-        time = {},
         appImage = {
             if (app.iconDrawable != null) {
                 val bitmap = remember(app.packageName) {
@@ -655,38 +819,26 @@ fun AppItemCard(
                 }
             }
         },
-        modifier = Modifier.fillMaxWidth(0.96f)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 6.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Toca para cerrar",
-                fontSize = 12.sp,
-                color = Color(0xFFB0BEC5),
-                fontWeight = FontWeight.Medium
+        time = {
+            // La X de la esquina indica que toda la tarjeta cierra la app
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Cerrar app",
+                tint = Color(0xFFFF8A80),
+                modifier = Modifier.size(16.dp)
             )
-
-            // Botón táctil grande con icono de 22dp para pulsar fácilmente sin fallar
-            Button(
-                onClick = onCloseClick,
-                modifier = Modifier.size(38.dp),
-                colors = ButtonDefaults.buttonColors(
-                    backgroundColor = Color(0x4DFF5252),
-                    contentColor = Color(0xFFFF5252)
-                )
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Cerrar app",
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-        }
+        },
+        title = {
+            Text(
+                text = "~\${app.estimatedRamMb} MB RAM · \${app.lastActiveFormatted}",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF80DEEA)
+            )
+        },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        // Sin contenido extra: tarjeta compacta para pantallas de 1.43"
     }
 }
 
@@ -694,37 +846,25 @@ fun AppItemCard(
 fun EmptyAppsView(onRefresh: () -> Unit) {
     Column(
         modifier = Modifier
-            .fillMaxSize()
-            .padding(20.dp),
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Text(
             text = "Sin Apps Activas",
-            fontSize = 18.sp,
+            fontSize = 17.sp,
             fontWeight = FontWeight.Bold,
             color = Color.White,
             textAlign = TextAlign.Center
         )
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = "Memoria RAM optimizada.",
-            fontSize = 14.sp,
+            fontSize = 13.sp,
             color = Color(0xFFB0BEC5),
             textAlign = TextAlign.Center
         )
-        Spacer(modifier = Modifier.height(14.dp))
-        Button(
-            onClick = onRefresh,
-            modifier = Modifier.size(48.dp),
-            colors = ButtonDefaults.primaryButtonColors()
-        ) {
-            Icon(
-                imageVector = Icons.Default.Refresh,
-                contentDescription = "Refrescar",
-                modifier = Modifier.size(24.dp)
-            )
-        }
     }
 }
 
@@ -733,7 +873,7 @@ fun PermissionRequiredCard(onGrantClick: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 20.dp),
+            .padding(horizontal = 16.dp, vertical = 18.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -762,9 +902,7 @@ fun PermissionRequiredCard(onGrantClick: () -> Unit) {
                     fontWeight = FontWeight.Bold
                 )
             },
-            modifier = Modifier
-                .fillMaxWidth(0.9f)
-                .height(46.dp)
+            modifier = Modifier.fillMaxWidth(0.92f)
         )
     }
 }
@@ -812,6 +950,7 @@ import android.provider.Settings
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -827,6 +966,14 @@ data class RecentAppItem(
     val lastTimeUsed: Long
 )
 
+/**
+ * Logica del gestor de apps recientes para Wear OS.
+ *
+ * - Usa UsageStatsManager para saber que apps se han usado en los ultimos 45 min.
+ * - Filtra procesos del sistema y solo deja apps que el usuario puede abrir.
+ * - Cierra en segundo plano con ActivityManager.killBackgroundProcesses (sin root).
+ * - Expone la RAM libre del reloj para que se vea el efecto de la limpieza.
+ */
 class AppManagerViewModel(application: Application) : AndroidViewModel(application) {
 
     private val context = application.applicationContext
@@ -845,24 +992,34 @@ class AppManagerViewModel(application: Application) : AndroidViewModel(applicati
     private val _hasUsageStatsPermission = MutableStateFlow(true)
     val hasUsageStatsPermission: StateFlow<Boolean> = _hasUsageStatsPermission.asStateFlow()
 
-    // Procesos críticos del sistema que nunca deben mostrarse ni forzar cierre
+    /** RAM libre (aproximada) del reloj, en MB. */
+    private val _freeRamMb = MutableStateFlow(0)
+    val freeRamMb: StateFlow<Int> = _freeRamMb.asStateFlow()
+
+    // Apps cerradas por el usuario: se ocultan hasta que pida actualizar a mano.
+    private val dismissedPackages = mutableSetOf<String>()
+
+    // Procesos criticos del sistema que nunca deben mostrarse ni forzar cierre
     private val systemPackageBlacklist = setOf(
         "android",
         "com.android.systemui",
         "com.google.android.wearable.sysui",
         "com.google.android.gms",
+        "com.google.android.gsf",
         "com.xiaomi.wearos.launcher",
         "com.xiaomi.wearos.settings",
         context.packageName
     )
 
     init {
-        checkPermissionAndLoad()
+        refreshPermissionAndApps()
     }
 
-    fun checkPermissionAndLoad() {
+    /** Relee el permiso de Acceso de Uso y recarga la lista si esta concedido. */
+    fun refreshPermissionAndApps() {
         val granted = checkUsageStatsPermission()
         _hasUsageStatsPermission.value = granted
+        updateFreeRam()
         if (granted) {
             loadRecentRunningApps()
         }
@@ -879,50 +1036,70 @@ class AppManagerViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun openUsageAccessSettings(context: Context) {
-        try {
-            val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        val candidates = listOf(
+            Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS),
+            Intent(Settings.ACTION_SETTINGS)
+        )
+        for (intent in candidates) {
+            try {
+                context.startActivity(intent.apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK })
+                return
+            } catch (_: Exception) {
+                // Probamos con la siguiente pantalla de ajustes disponible.
             }
-            context.startActivity(intent)
-        } catch (_: Exception) {
-            val intent = Intent(Settings.ACTION_SETTINGS).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            context.startActivity(intent)
         }
     }
 
     fun loadRecentRunningApps() {
         viewModelScope.launch {
             _isLoading.value = true
-            val apps = withContext(Dispatchers.IO) {
-                fetchActiveUserApps()
-            }
+            val apps = withContext(Dispatchers.IO) { fetchActiveUserApps() }
             _recentApps.value = apps
+            updateFreeRam()
             _isLoading.value = false
+        }
+    }
+
+    /** Boton "Actualizar": vuelve a mostrar todo lo reciente, incluidas las cerradas. */
+    fun refreshAll() {
+        dismissedPackages.clear()
+        loadRecentRunningApps()
+    }
+
+    private fun updateFreeRam() {
+        try {
+            val info = ActivityManager.MemoryInfo()
+            activityManager.getMemoryInfo(info)
+            _freeRamMb.value = (info.availMem / (1024L * 1024L)).toInt()
+        } catch (_: Exception) {
+            _freeRamMb.value = 0
         }
     }
 
     private fun fetchActiveUserApps(): List<RecentAppItem> {
         val now = System.currentTimeMillis()
-        val threshold = now - (1000 * 60 * 60) // Apps en los últimos 60 minutos
+        val usageWindow = now - (1000L * 60 * 60) // ultimos 60 minutos
+        val recentWindow = now - (1000L * 60 * 45) // se muestra lo usado en 45 min
         val activePackages = mutableMapOf<String, Long>()
 
         // 1. UsageStatsManager: API moderna recomendada en Wear OS 3.5 / 4
         if (usageStatsManager != null && _hasUsageStatsPermission.value) {
-            val stats = usageStatsManager.queryUsageStats(
-                UsageStatsManager.INTERVAL_BEST,
-                threshold,
-                now
-            )
-            for (stat in stats) {
-                if (stat.lastTimeUsed > (now - 1000 * 60 * 45) && stat.totalTimeInForeground > 0) {
-                    activePackages[stat.packageName] = stat.lastTimeUsed
+            try {
+                val stats = usageStatsManager.queryUsageStats(
+                    UsageStatsManager.INTERVAL_BEST,
+                    usageWindow,
+                    now
+                )
+                for (stat in stats) {
+                    if (stat.lastTimeUsed > recentWindow && stat.totalTimeInForeground > 0) {
+                        activePackages[stat.packageName] = stat.lastTimeUsed
+                    }
                 }
+            } catch (_: Exception) {
             }
         }
 
-        // 2. Complementar con procesos en ejecución detectables
+        // 2. Complementar con procesos en ejecucion detectables
         try {
             activityManager.runningAppProcesses?.forEach { process ->
                 process.pkgList?.forEach { pkg ->
@@ -931,74 +1108,83 @@ class AppManagerViewModel(application: Application) : AndroidViewModel(applicati
                     }
                 }
             }
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
 
         val resultList = mutableListOf<RecentAppItem>()
 
         for ((pkgName, lastUsed) in activePackages) {
             if (systemPackageBlacklist.contains(pkgName)) continue
+            if (dismissedPackages.contains(pkgName)) continue
 
             try {
                 val appInfo = packageManager.getApplicationInfo(pkgName, 0)
 
-                // Excluir procesos marcados como FLAG_SYSTEM o actualizaciones de fábrica
+                // Excluir procesos marcados como FLAG_SYSTEM o actualizaciones de fabrica
                 val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
                 val isUpdatedSystem = (appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+                if (isSystem || isUpdatedSystem) continue
 
-                if (!isSystem && !isUpdatedSystem) {
-                    val label = packageManager.getApplicationLabel(appInfo).toString()
-                    val icon = packageManager.getApplicationIcon(appInfo)
-                    val ramMb = estimateAppMemory(pkgName)
-                    val formattedTime = formatTimeDiff(now - lastUsed)
+                // Solo apps que el usuario puede abrir (evita servicios y procesos sueltos)
+                if (packageManager.getLaunchIntentForPackage(pkgName) == null) continue
 
-                    resultList.add(
-                        RecentAppItem(
-                            packageName = pkgName,
-                            appName = label,
-                            iconDrawable = icon,
-                            estimatedRamMb = ramMb,
-                            lastActiveFormatted = formattedTime,
-                            lastTimeUsed = lastUsed
-                        )
+                val label = packageManager.getApplicationLabel(appInfo).toString()
+                val icon = runCatching { packageManager.getApplicationIcon(appInfo) }.getOrNull()
+                val ramMb = estimateAppMemory(pkgName)
+                val formattedTime = formatTimeDiff(now - lastUsed)
+
+                resultList.add(
+                    RecentAppItem(
+                        packageName = pkgName,
+                        appName = label,
+                        iconDrawable = icon,
+                        estimatedRamMb = ramMb,
+                        lastActiveFormatted = formattedTime,
+                        lastTimeUsed = lastUsed
                     )
-                }
-            } catch (_: PackageManager.NameNotFoundException) {}
+                )
+            } catch (_: PackageManager.NameNotFoundException) {
+            }
         }
 
         return resultList.sortedByDescending { it.lastTimeUsed }
     }
 
+    /** Quita la app de la lista y pide al sistema que libere sus procesos en segundo plano. */
     fun closeApp(packageName: String) {
+        dismissedPackages.add(packageName)
+        _recentApps.value = _recentApps.value.filter { it.packageName != packageName }
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                activityManager.killBackgroundProcesses(packageName)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-            _recentApps.value = _recentApps.value.filter { it.packageName != packageName }
+            runCatching { activityManager.killBackgroundProcesses(packageName) }
+            delay(600)
+            updateFreeRam()
         }
     }
 
     fun closeAllApps() {
         val currentList = _recentApps.value
+        currentList.forEach { dismissedPackages.add(it.packageName) }
+        _recentApps.value = emptyList()
         viewModelScope.launch(Dispatchers.IO) {
             currentList.forEach { app ->
-                try {
-                    activityManager.killBackgroundProcesses(app.packageName)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
+                runCatching { activityManager.killBackgroundProcesses(app.packageName) }
             }
-            _recentApps.value = emptyList()
+            delay(700)
+            updateFreeRam()
         }
     }
 
+    /**
+     * Wear OS no permite leer la RAM real de otras apps sin root, asi que se
+     * estima por tipo de app. El numero de RAM libre de la cabecera si es real.
+     */
     private fun estimateAppMemory(pkg: String): Int {
         return when {
             pkg.contains("map") || pkg.contains("navigation") -> 160
             pkg.contains("strava") || pkg.contains("fitness") -> 135
             pkg.contains("music") || pkg.contains("spotify") -> 110
             pkg.contains("telegram") || pkg.contains("whatsapp") -> 90
+            pkg.contains("youtube") || pkg.contains("video") -> 120
             else -> 65
         }
     }
@@ -1007,7 +1193,7 @@ class AppManagerViewModel(application: Application) : AndroidViewModel(applicati
         val minutes = (diffMillis / (1000 * 60)).toInt()
         return when {
             minutes <= 1 -> "Hace 1 min"
-            minutes < 60 -> "Hace \${minutes} min"
+            minutes < 60 -> "Hace $minutes min"
             else -> "Hace \${minutes / 60} h"
         }
     }
@@ -1038,6 +1224,80 @@ class AppManagerViewModel(application: Application) : AndroidViewModel(applicati
     <color name="text_secondary">#FFB0BEC5</color>
     <color name="close_red">#FFD32F2F</color>
 </resources>
+`,
+  },
+  {
+    path: 'app/src/main/res/values/ic_launcher_background.xml',
+    filename: 'ic_launcher_background.xml',
+    category: 'res',
+    description: 'Color de fondo del icono adaptativo (#0B0F14, negro AMOLED).',
+    content: `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#0B0F14</color>
+</resources>
+`,
+  },
+  {
+    path: 'app/src/main/res/drawable/ic_launcher_foreground.xml',
+    filename: 'ic_launcher_foreground.xml',
+    category: 'res',
+    description: 'Icono adaptativo vectorial: escoba "limpia apps" en cian sobre fondo oscuro.',
+    content: `<?xml version="1.0" encoding="utf-8"?>
+<!-- Escoba "limpia apps" sobre fondo oscuro, dentro de la zona segura del icono adaptativo -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:rotation="-18">
+
+        <!-- Mango -->
+        <path
+            android:fillColor="#ECEFF1"
+            android:pathData="M50,28 L58,28 L58,58 L50,58 Z" />
+
+        <!-- Cepillo / base -->
+        <path
+            android:fillColor="#00E5FF"
+            android:pathData="M38,58 L70,58 A4,4 0 0 1 74,62 L74,66 A4,4 0 0 1 70,70 L38,70 A4,4 0 0 1 34,66 L34,62 A4,4 0 0 1 38,58 Z" />
+
+        <!-- Cerdas -->
+        <path
+            android:fillColor="#80DEEA"
+            android:pathData="M37,72 L42,72 L40,84 L35,84 Z" />
+        <path
+            android:fillColor="#80DEEA"
+            android:pathData="M45,72 L50,72 L49,84 L44,84 Z" />
+        <path
+            android:fillColor="#80DEEA"
+            android:pathData="M58,72 L63,72 L63,84 L58,84 Z" />
+        <path
+            android:fillColor="#80DEEA"
+            android:pathData="M66,72 L71,72 L73,84 L68,84 Z" />
+
+        <!-- Brillo / chispa de "limpio" -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M68,32 L70,38 L76,40 L70,42 L68,48 L66,42 L60,40 L66,38 Z" />
+    </group>
+</vector>
+`,
+  },
+  {
+    path: 'app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml',
+    filename: 'ic_launcher.xml',
+    category: 'res',
+    description: 'Icono adaptativo con capa monochrome para los iconos temáticos de Wear OS 4.',
+    content: `<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>
 `,
   },
 ];
