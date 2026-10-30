@@ -1,0 +1,6 @@
+{
+  "name": "WearOS Xiaomi Watch 2 App Manager",
+  "description": "Gestor de Aplicaciones Recientes para Xiaomi Watch 2 en Wear OS con Jetpack Compose, simulador circular interactivo y código fuente Kotlin completo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
